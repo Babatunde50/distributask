@@ -46,9 +46,11 @@ func run(logger *log.Logger) error {
 
 	flag.StringVar(&cfg.baseURL, "base-url", "http://localhost:4444", "base URL for the application")
 	flag.IntVar(&cfg.httpPort, "http-port", 4444, "port to listen on for HTTP requests")
-	flag.StringVar(&cfg.db.dsn, "db-dsn", "user:pass@localhost:5432/db", "postgreSQL DSN")
+	flag.StringVar(&cfg.db.dsn, "db-dsn", "postgres://distributask:pa55word@localhost/distributask?sslmode=disable", "postgreSQL DSN")
 	flag.BoolVar(&cfg.db.automigrate, "db-automigrate", true, "run migrations on startup")
 	flag.StringVar(&cfg.jwt.secretKey, "jwt-secret-key", "xb37u2w4i57oooowambofjbhfbkemrj7", "secret key for JWT authentication")
+
+	// postgres://distributask:pa55word@localhost/distributask?sslmode=disable
 
 	showVersion := flag.Bool("version", false, "display version and exit")
 
