@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/Babatunde50/distributask/internal/database"
 	"github.com/Babatunde50/distributask/internal/password"
 	"github.com/Babatunde50/distributask/internal/request"
 	"github.com/Babatunde50/distributask/internal/response"
@@ -26,8 +27,8 @@ func (app *application) status(w http.ResponseWriter, r *http.Request) {
 
 func (app *application) createUser(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Email     string              `json:"Email"`
-		Password  string              `json:"Password"`
+		Email     string              `json:"email"`
+		Password  string              `json:"password"`
 		Validator validator.Validator `json:"-"`
 	}
 
@@ -43,10 +44,12 @@ func (app *application) createUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// validate email
 	input.Validator.CheckField(input.Email != "", "Email", "Email is required")
 	input.Validator.CheckField(validator.Matches(input.Email, validator.RgxEmail), "Email", "Must be a valid email address")
 	input.Validator.CheckField(existingUser == nil, "Email", "Email is already in use")
 
+	// validate password
 	input.Validator.CheckField(input.Password != "", "Password", "Password is required")
 	input.Validator.CheckField(len(input.Password) >= 8, "Password", "Password is too short")
 	input.Validator.CheckField(len(input.Password) <= 72, "Password", "Password is too long")
@@ -63,19 +66,79 @@ func (app *application) createUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = app.db.InsertUser(input.Email, hashedPassword)
+	_, err = app.db.InsertUser(input.Email, "user", hashedPassword)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
 
-	w.WriteHeader(http.StatusNoContent)
+	err = app.writeJSON(w, http.StatusCreated, input, nil)
+
+	if err != nil {
+		app.serverError(w, r, err)
+	}
+
+}
+
+// TODO: make payload more robust,
+// TODO: handle validation robustly
+func (app *application) createTask(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Type       string              `json:"type"`
+		Payload    database.Payload    `json:"payload"`
+		Priority   int                 `json:"priority"`
+		Timeout    int                 `json:"timeout"`
+		MaxRetries int                 `json:"max_retries"`
+		Validator  validator.Validator `json:"-"`
+	}
+
+	err := request.DecodeJSON(w, r, &input)
+	if err != nil {
+		app.badRequest(w, r, err)
+		return
+	}
+
+	// validate type field
+	input.Validator.CheckField(input.Type != "", "Type", "Type is required")
+	input.Validator.CheckField(input.Type != "image_processing" || input.Type != "data_processing", "Type", "Type must be either image_processing or data_processing")
+
+	// validate payload field
+	input.Validator.CheckField(input.Payload.ImageURL != "", "Payload", "Payload is required")
+	input.Validator.CheckField(input.Payload.ResizeWidth != 0, "Payload", "Payload is required")
+	input.Validator.CheckField(input.Payload.ResizeHeight != 0, "Payload", "Payload is required")
+
+	if input.Validator.HasErrors() {
+		app.failedValidation(w, r, input.Validator)
+		return
+	}
+
+	authenticatedUser := contextGetAuthenticatedUser(r)
+
+	// create task
+	task := database.Task{
+		Type:       input.Type,
+		Payload:    input.Payload,
+		Priority:   input.Priority,
+		Timeout:    input.Timeout,
+		MaxRetries: input.MaxRetries,
+		UserId:     authenticatedUser.ID,
+	}
+
+	// send created task to user
+	err = app.db.InsertTask(&task)
+
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+
+	app.writeJSON(w, http.StatusCreated, task, nil)
 }
 
 func (app *application) createAuthenticationToken(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Email     string              `json:"Email"`
-		Password  string              `json:"Password"`
+		Email     string              `json:"email"`
+		Password  string              `json:"password"`
 		Validator validator.Validator `json:"-"`
 	}
 
@@ -95,7 +158,7 @@ func (app *application) createAuthenticationToken(w http.ResponseWriter, r *http
 	input.Validator.CheckField(user != nil, "Email", "Email address could not be found")
 
 	if user != nil {
-		passwordMatches, err := password.Matches(input.Password, user.HashedPassword)
+		passwordMatches, err := password.Matches(input.Password, user.PasswordHash)
 		if err != nil {
 			app.serverError(w, r, err)
 			return
@@ -110,6 +173,7 @@ func (app *application) createAuthenticationToken(w http.ResponseWriter, r *http
 		return
 	}
 
+	// create JWT
 	var claims jwt.Claims
 	claims.Subject = strconv.Itoa(user.ID)
 
@@ -132,12 +196,9 @@ func (app *application) createAuthenticationToken(w http.ResponseWriter, r *http
 		"AuthenticationTokenExpiry": expiry.Format(time.RFC3339),
 	}
 
-	err = response.JSON(w, http.StatusOK, data)
+	err = app.writeJSON(w, http.StatusCreated, data, nil)
+
 	if err != nil {
 		app.serverError(w, r, err)
 	}
-}
-
-func (app *application) protected(w http.ResponseWriter, r *http.Request) {
-	w.Write([]byte("This is a protected handler"))
 }
