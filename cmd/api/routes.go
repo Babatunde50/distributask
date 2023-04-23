@@ -24,14 +24,18 @@ func (app *application) routes() http.Handler {
 
 		// Submit a new task to the task queue.
 		mux.Post("/tasks", app.createTask)
-		// // Retrieve detailed information about a specific task by its ID.
-		// mux.Get("/tasks/{taskID}", app.getTask)
-		// // Retrieve a list of tasks with optional filters like task status, priority, or date range.
-		// mux.Get("/tasks", app.listTasks)
-		// // Update the properties of a task, such as priority or status.
-		// mux.Put("/tasks/{taskID}", app.updateTask)
-		// // Remove a task from the task queue.
-		// mux.Delete("/tasks/{taskID}", app.deleteTask)
+
+		// Retrieve detailed information about a specific task by its ID.
+		mux.Get("/tasks/{taskID}", app.getTask)
+
+		// Retrieve a list of tasks with optional filters like task status, priority, or date range.
+		mux.Get("/tasks", app.listTasks)
+
+		// Update the properties of a task, such as priority or status.
+		mux.Put("/tasks/{taskID}", app.updateTask)
+
+		// Remove a task from the task queue.
+		mux.Delete("/tasks/{taskID}", app.deleteTask)
 
 		// // Retrieve detailed information about a specific worker node by its ID.
 		// mux.Get("/nodes/{nodeID}", app.getNode)

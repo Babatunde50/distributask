@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
 	"errors"
@@ -14,20 +15,34 @@ type Payload struct {
 	ResizeHeight int    `json:"resize_height,omitempty" db:"resize_height"`
 }
 
+type Filters struct {
+	Page     int
+	PageSize int
+	Sort     string
+}
+
+func (f Filters) limit() int {
+	return f.PageSize
+}
+
+func (f Filters) offset() int {
+	return (f.Page - 1) * f.PageSize
+}
+
 type Task struct {
-	ID          int       `db:"id" json:"id"`
-	Type        string    `db:"type" json:"type"`
-	Payload     Payload   `db:"payload" json:"payload"`
-	Priority    int       `db:"priority" json:"priority"`
-	Status      string    `db:"status" json:"status"`
-	CreatedAt   time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt   time.Time `db:"updated_at" json:"updated_at"`
-	Timeout     int       `db:"timeout" json:"timeout"`
-	RetryCount  int       `db:"retry_count" json:"retry_count"`
-	MaxRetries  int       `db:"max_retries" json:"max_retries"`
-	NextRetryAt time.Time `db:"next_retry_at" json:"next_retry_at,omitempty"`
-	Result      string    `db:"result" json:"result,omitempty"`
-	UserId      int       `db:"user_id" json:"-"`
+	ID          int            `db:"id" json:"id"`
+	Type        string         `db:"type" json:"type"`
+	Payload     Payload        `db:"payload" json:"payload"`
+	Priority    int            `db:"priority" json:"priority"`
+	Status      string         `db:"status" json:"status"`
+	CreatedAt   time.Time      `db:"created_at" json:"created_at"`
+	UpdatedAt   time.Time      `db:"updated_at" json:"updated_at"`
+	Timeout     int            `db:"timeout" json:"timeout"`
+	RetryCount  int            `db:"retry_count" json:"retry_count"`
+	MaxRetries  int            `db:"max_retries" json:"max_retries"`
+	NextRetryAt sql.NullTime   `db:"next_retry_at" json:"next_retry_at,omitempty"`
+	Result      sql.NullString `db:"result" json:"result,omitempty"`
+	UserId      int            `db:"user_id" json:"-"`
 }
 
 func (p Payload) Value() (driver.Value, error) {
@@ -82,17 +97,19 @@ func (db *DB) GetTask(id, userId int) (*Task, error) {
 	return &task, nil
 }
 
-func (db *DB) ListTasks(userId int) ([]*Task, error) {
+func (db *DB) ListTasks(userId int, filters Filters) ([]*Task, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
+	// todo: add sorting
 	query := `
 		SELECT id, type, payload, priority, status, created_at, updated_at, timeout, retry_count, max_retries, next_retry_at, result
 		FROM tasks
 		WHERE user_id = $1
+		LIMIT $2 OFFSET $3
 		`
 
-	rows, err := db.QueryContext(ctx, query, userId)
+	rows, err := db.QueryContext(ctx, query, userId, filters.limit(), filters.offset())
 	if err != nil {
 		return nil, err
 	}

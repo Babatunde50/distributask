@@ -10,6 +10,7 @@ import (
 	"github.com/Babatunde50/distributask/internal/request"
 	"github.com/Babatunde50/distributask/internal/response"
 	"github.com/Babatunde50/distributask/internal/validator"
+	"github.com/go-chi/chi/v5"
 
 	"github.com/pascaldekloe/jwt"
 )
@@ -78,6 +79,170 @@ func (app *application) createUser(w http.ResponseWriter, r *http.Request) {
 		app.serverError(w, r, err)
 	}
 
+}
+
+// TODO: handle validation robustly
+func (app *application) listTasks(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Page     int    `json:"page"`
+		PageSize int    `json:"page_size"`
+		Sort     string `json:"sort"`
+	}
+
+	qs := r.URL.Query()
+
+	input.Page = app.readInt(qs, "page", 1)
+	input.PageSize = app.readInt(qs, "page_size", 10)
+	input.Sort = app.readString(qs, "sort", "id")
+
+	authenticatedUser := contextGetAuthenticatedUser(r)
+
+	tasks, err := app.db.ListTasks(authenticatedUser.ID, database.Filters{Page: input.Page, PageSize: input.PageSize, Sort: input.Sort})
+
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+
+	err = app.writeJSON(w, http.StatusOK, tasks, nil)
+
+	if err != nil {
+		app.serverError(w, r, err)
+	}
+
+}
+
+func (app *application) updateTask(w http.ResponseWriter, r *http.Request) {
+
+	taskID := chi.URLParam(r, "taskID")
+
+	taskIdInt, err := strconv.Atoi(taskID)
+
+	if err != nil {
+		app.badRequest(w, r, err)
+		return
+	}
+
+	authenticatedUser := contextGetAuthenticatedUser(r)
+
+	task, err := app.db.GetTask(taskIdInt, authenticatedUser.ID)
+
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+
+	if task == nil {
+		app.notFound(w, r)
+		return
+	}
+
+	var input struct {
+		Payload    *database.Payload   `json:"payload"`
+		Priority   *int                `json:"priority"`
+		Timeout    *int                `json:"timeout"`
+		Type       *string             `json:"type"`
+		MaxRetries *int                `json:"max_retries"`
+		Validator  validator.Validator `json:"-"`
+	}
+
+	err = request.DecodeJSON(w, r, &input)
+
+	if err != nil {
+		app.badRequest(w, r, err)
+		return
+	}
+
+	if input.Payload != nil {
+		task.Payload = *input.Payload
+	}
+
+	if input.Type != nil {
+		task.Type = *input.Type
+	}
+
+	if input.Priority != nil {
+		task.Priority = *input.Priority
+	}
+
+	if input.Timeout != nil {
+		task.Timeout = *input.Timeout
+	}
+
+	if input.MaxRetries != nil {
+		task.MaxRetries = *input.MaxRetries
+	}
+
+	// TODO: validate task input
+
+	err = app.db.UpdateTask(task)
+
+	if err != nil {
+		app.badRequest(w, r, err)
+		return
+	}
+
+	err = app.writeJSON(w, http.StatusOK, task, nil)
+
+	if err != nil {
+		app.serverError(w, r, err)
+	}
+
+}
+
+func (app *application) deleteTask(w http.ResponseWriter, r *http.Request) {
+
+	taskID := chi.URLParam(r, "taskID")
+
+	taskIdInt, err := strconv.Atoi(taskID)
+
+	if err != nil {
+		app.badRequest(w, r, err)
+		return
+	}
+
+	authenticatedUser := contextGetAuthenticatedUser(r)
+
+	err = app.db.DeleteTask(taskIdInt, authenticatedUser.ID)
+
+	if err != nil {
+		app.badRequest(w, r, err)
+		return
+	}
+
+	err = app.writeJSON(w, http.StatusNoContent, nil, nil)
+
+	if err != nil {
+		app.serverError(w, r, err)
+	}
+
+}
+
+func (app *application) getTask(w http.ResponseWriter, r *http.Request) {
+
+	taskId := chi.URLParam(r, "taskID")
+
+	taskIdInt, err := strconv.Atoi(taskId)
+
+	if err != nil {
+		app.badRequest(w, r, err)
+		return
+	}
+
+	authenticatedUser := contextGetAuthenticatedUser(r)
+
+	task, err := app.db.GetTask(taskIdInt, authenticatedUser.ID)
+
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+
+	err = app.writeJSON(w, http.StatusOK, task, nil)
+
+	if err != nil {
+		app.serverError(w, r, err)
+	}
 }
 
 // TODO: make payload more robust,
