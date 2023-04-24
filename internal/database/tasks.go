@@ -3,17 +3,8 @@ package database
 import (
 	"context"
 	"database/sql"
-	"database/sql/driver"
-	"encoding/json"
-	"errors"
 	"time"
 )
-
-type Payload struct {
-	ImageURL     string `json:"image_url,omitempty" db:"image_url"`
-	ResizeWidth  int    `json:"resize_width,omitempty" db:"resize_width"`
-	ResizeHeight int    `json:"resize_height,omitempty" db:"resize_height"`
-}
 
 type Filters struct {
 	Page     int
@@ -43,19 +34,6 @@ type Task struct {
 	NextRetryAt sql.NullTime   `db:"next_retry_at" json:"next_retry_at,omitempty"`
 	Result      sql.NullString `db:"result" json:"result,omitempty"`
 	UserId      int            `db:"user_id" json:"-"`
-}
-
-func (p Payload) Value() (driver.Value, error) {
-	return json.Marshal(p)
-}
-
-func (p *Payload) Scan(value interface{}) error {
-	b, ok := value.([]byte)
-	if !ok {
-		return errors.New("type assertion to []byte failed")
-	}
-
-	return json.Unmarshal(b, &p)
 }
 
 func (db *DB) InsertTask(task *Task) error {

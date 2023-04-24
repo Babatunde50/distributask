@@ -8,12 +8,13 @@ import (
 
 	"github.com/Babatunde50/distributask/internal/response"
 	"github.com/Babatunde50/distributask/internal/validator"
+	"github.com/rs/zerolog/log"
 )
 
 func (app *application) reportError(err error) {
 	trace := debug.Stack()
 
-	app.logger.Printf("%s\n%s", err, trace)
+	log.Info().Msgf("%s\n%s", err, trace)
 }
 
 func (app *application) errorMessage(w http.ResponseWriter, r *http.Request, status int, message string, headers http.Header) {

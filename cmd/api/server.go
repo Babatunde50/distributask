@@ -9,6 +9,8 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/rs/zerolog/log"
 )
 
 const (
@@ -22,7 +24,6 @@ func (app *application) serveHTTP() error {
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", app.config.httpPort),
 		Handler:      app.routes(),
-		ErrorLog:     app.logger,
 		IdleTimeout:  defaultIdleTimeout,
 		ReadTimeout:  defaultReadTimeout,
 		WriteTimeout: defaultWriteTimeout,
@@ -41,7 +42,7 @@ func (app *application) serveHTTP() error {
 		shutdownErrorChan <- srv.Shutdown(ctx)
 	}()
 
-	app.logger.Printf("starting server on %s", srv.Addr)
+	log.Info().Msgf("starting server on %s", srv.Addr)
 
 	err := srv.ListenAndServe()
 	if !errors.Is(err, http.ErrServerClosed) {
@@ -53,7 +54,7 @@ func (app *application) serveHTTP() error {
 		return err
 	}
 
-	app.logger.Printf("stopped server on %s", srv.Addr)
+	log.Info().Msgf("stopped server on %s", srv.Addr)
 
 	app.wg.Wait()
 	return nil
