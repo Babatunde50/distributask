@@ -3,22 +3,24 @@ package main
 import (
 	"flag"
 	"fmt"
-	"log"
-	"os"
 	"runtime/debug"
 	"sync"
 
 	"github.com/Babatunde50/distributask/internal/database"
 	"github.com/Babatunde50/distributask/internal/version"
+	"github.com/Babatunde50/distributask/internal/worker"
+	"github.com/hibiken/asynq"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
 func main() {
-	logger := log.New(os.Stdout, "", log.LstdFlags|log.Llongfile)
-
-	err := run(logger)
+	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
+	err := run()
 	if err != nil {
 		trace := debug.Stack()
-		logger.Fatalf("%s\n%s", err, trace)
+		log.Fatal().Msgf("%s\n%s", err, trace)
+
 	}
 }
 
@@ -35,13 +37,13 @@ type config struct {
 }
 
 type application struct {
-	config config
-	db     *database.DB
-	logger *log.Logger
-	wg     sync.WaitGroup
+	config          config
+	db              *database.DB
+	wg              sync.WaitGroup
+	taskDistributor worker.TaskDistributor
 }
 
-func run(logger *log.Logger) error {
+func run() error {
 	var cfg config
 
 	flag.StringVar(&cfg.baseURL, "base-url", "http://localhost:4444", "base URL for the application")
@@ -63,15 +65,26 @@ func run(logger *log.Logger) error {
 
 	db, err := database.New(cfg.db.dsn, cfg.db.automigrate)
 
+	redisConnOpt := asynq.RedisClientOpt{
+		Addr: "localhost:6379",
+		DB:   0,
+	}
+
+	processor := worker.NewRedisTaskProcessor(redisConnOpt, db)
+
+	go processor.Start()
+
+	taskDistributor := worker.NewRedisTaskDistributor(redisConnOpt)
+
 	if err != nil {
 		return err
 	}
 	defer db.Close()
 
 	app := &application{
-		config: cfg,
-		db:     db,
-		logger: logger,
+		config:          cfg,
+		db:              db,
+		taskDistributor: taskDistributor,
 	}
 
 	return app.serveHTTP()

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/Babatunde50/distributask/internal/request"
 	"github.com/Babatunde50/distributask/internal/response"
 	"github.com/Babatunde50/distributask/internal/validator"
+	"github.com/Babatunde50/distributask/internal/worker"
 	"github.com/go-chi/chi/v5"
 
 	"github.com/pascaldekloe/jwt"
@@ -263,14 +265,7 @@ func (app *application) createTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// validate type field
-	input.Validator.CheckField(input.Type != "", "Type", "Type is required")
-	input.Validator.CheckField(input.Type != "image_processing" || input.Type != "data_processing", "Type", "Type must be either image_processing or data_processing")
-
-	// validate payload field
-	input.Validator.CheckField(input.Payload.ImageURL != "", "Payload", "Payload is required")
-	input.Validator.CheckField(input.Payload.ResizeWidth != 0, "Payload", "Payload is required")
-	input.Validator.CheckField(input.Payload.ResizeHeight != 0, "Payload", "Payload is required")
+	// TODO: validate task input
 
 	if input.Validator.HasErrors() {
 		app.failedValidation(w, r, input.Validator)
@@ -297,7 +292,25 @@ func (app *application) createTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	app.writeJSON(w, http.StatusCreated, task, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 4000)
+	defer cancel()
+
+	// TODO: add to queue for processing...
+	err = app.taskDistributor.DistributeTaskSendTask(ctx, &worker.PayloadSendTask{
+		Id: task.ID,
+	})
+
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+
+	err = app.writeJSON(w, http.StatusCreated, task, nil)
+
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
 }
 
 func (app *application) createAuthenticationToken(w http.ResponseWriter, r *http.Request) {
