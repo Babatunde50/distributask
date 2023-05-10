@@ -80,3 +80,36 @@ migrations/version:
 	go run -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest -path=./assets/migrations -database="postgres://${DB_DSN}" version
 
 
+# ==================================================================================== #
+# DOCKER DEVELOPMENT
+# ==================================================================================== #
+
+## docker/build: build the docker image
+.PHONY: docker/build
+docker/build:
+	docker build -t ${DOCKER_IMAGE} .
+
+## docker/run: run the docker image
+.PHONY: docker/run
+docker/run:
+	docker run -it --rm -p 4444:4444 ${DOCKER_IMAGE}
+
+## docker/redis: run the redis docker image
+.PHONY: docker/redis
+docker/redis:
+	docker run -it --rm -d -p 6379:6379 redis:6.2.5-alpine
+
+## docker/postgres: run the postgres docker image
+.PHONY: docker/postgres
+docker/postgres:
+	docker run -it --rm -p 5432:5432 -e POSTGRES_USER=distributask -e POSTGRES_PASSWORD=pa55word postgres:13.4-alpine -h 0.0.0.0 -d distributask
+
+## docker-compose/up: run the docker-compose stack
+.PHONY: docker-compose/up
+docker-compose/up:
+	docker-compose up 
+
+## docker-compose/down: stop the docker-compose stack
+.PHONY: docker-compose/down
+docker-compose/down:
+	docker-compose down
