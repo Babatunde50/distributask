@@ -46,13 +46,11 @@ type application struct {
 func run() error {
 	var cfg config
 
-	flag.StringVar(&cfg.baseURL, "base-url", "http://localhost:4444", "base URL for the application")
+	flag.StringVar(&cfg.baseURL, "base-url", "http://api:4444", "base URL for the application")
 	flag.IntVar(&cfg.httpPort, "http-port", 4444, "port to listen on for HTTP requests")
-	flag.StringVar(&cfg.db.dsn, "db-dsn", "distributask:pa55word@localhost/distributask?sslmode=disable", "postgreSQL DSN")
+	flag.StringVar(&cfg.db.dsn, "db-dsn", "distributask:pa55word@postgres/distributask?sslmode=disable", "postgreSQL DSN")
 	flag.BoolVar(&cfg.db.automigrate, "db-automigrate", true, "run migrations on startup")
 	flag.StringVar(&cfg.jwt.secretKey, "jwt-secret-key", "xb37u2w4i57oooowambofjbhfbkemrj7", "secret key for JWT authentication")
-
-	// postgres://distributask:pa55word@localhost/distributask?sslmode=disable
 
 	showVersion := flag.Bool("version", false, "display version and exit")
 
@@ -65,8 +63,12 @@ func run() error {
 
 	db, err := database.New(cfg.db.dsn, cfg.db.automigrate)
 
+	if err != nil {
+		return err
+	}
+
 	redisConnOpt := asynq.RedisClientOpt{
-		Addr: "localhost:6379",
+		Addr: "redis:6379",
 		DB:   0,
 	}
 
@@ -76,9 +78,6 @@ func run() error {
 
 	taskDistributor := worker.NewRedisTaskDistributor(redisConnOpt)
 
-	if err != nil {
-		return err
-	}
 	defer db.Close()
 
 	app := &application{

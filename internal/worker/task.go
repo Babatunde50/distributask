@@ -11,7 +11,8 @@ import (
 const TaskSendTask = "task:send_task"
 
 type PayloadSendTask struct {
-	Id int `json:"id"`
+	TaskID int `json:"task_id"`
+	UserID int `json:"user_id"`
 }
 
 func (distributor *RedisTaskDistributor) DistributeTaskSendTask(
@@ -24,17 +25,12 @@ func (distributor *RedisTaskDistributor) DistributeTaskSendTask(
 		return fmt.Errorf("failed to marshal task payload: %w", err)
 	}
 
-	fmt.Println("being called ...", payload)
+	task := asynq.NewTask(TaskSendTask, jsonPayload, opts[0])
 
-	task := asynq.NewTask(TaskSendTask, jsonPayload, opts...)
-
-	// info, err := distributor.client.EnqueueContext(ctx, task)
-	info, err := distributor.client.Enqueue(task)
+	_, err = distributor.client.Enqueue(task, opts[1])
 	if err != nil {
 		return fmt.Errorf("failed to enqueue task: %w", err)
 	}
-
-	fmt.Println(info, "__info__")
 
 	return nil
 }
@@ -45,9 +41,30 @@ func (processor *RedisTaskProcessor) ProcessTaskSendTask(ctx context.Context, ta
 		return fmt.Errorf("failed to unmarshal payload: %w", asynq.SkipRetry)
 	}
 
-	//TODO: Do your stuffs
+	// get task
+	gottenTask, err := processor.db.GetTask(payload.TaskID, payload.UserID)
 
-	fmt.Println(payload, "__processing__task__")
+	if err != nil {
+		return fmt.Errorf("failed to get task from the db %v", err)
+	}
+
+	gottenTask.Status = "in_progress"
+
+	fmt.Println(gottenTask.UserId, "gottenTask.UserId")
+
+	err = processor.db.UpdateTask(gottenTask)
+
+	if err != nil {
+		return fmt.Errorf("failed to update task from the db %v", err)
+	}
+
+	switch gottenTask.Type {
+	case "image_processing":
+		err := imageHandler(processor.db, gottenTask)
+		if err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
