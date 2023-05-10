@@ -13,6 +13,7 @@ import (
 	"github.com/Babatunde50/distributask/internal/validator"
 	"github.com/Babatunde50/distributask/internal/worker"
 	"github.com/go-chi/chi/v5"
+	"github.com/hibiken/asynq"
 
 	"github.com/pascaldekloe/jwt"
 )
@@ -140,12 +141,9 @@ func (app *application) updateTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		Payload    *database.Payload   `json:"payload"`
-		Priority   *int                `json:"priority"`
-		Timeout    *int                `json:"timeout"`
-		Type       *string             `json:"type"`
-		MaxRetries *int                `json:"max_retries"`
-		Validator  validator.Validator `json:"-"`
+		Payload   *database.Payload   `json:"payload"`
+		Type      *string             `json:"type"`
+		Validator validator.Validator `json:"-"`
 	}
 
 	err = request.DecodeJSON(w, r, &input)
@@ -161,18 +159,6 @@ func (app *application) updateTask(w http.ResponseWriter, r *http.Request) {
 
 	if input.Type != nil {
 		task.Type = *input.Type
-	}
-
-	if input.Priority != nil {
-		task.Priority = *input.Priority
-	}
-
-	if input.Timeout != nil {
-		task.Timeout = *input.Timeout
-	}
-
-	if input.MaxRetries != nil {
-		task.MaxRetries = *input.MaxRetries
 	}
 
 	// TODO: validate task input
@@ -250,54 +236,56 @@ func (app *application) getTask(w http.ResponseWriter, r *http.Request) {
 // TODO: make payload more robust,
 // TODO: handle validation robustly
 func (app *application) createTask(w http.ResponseWriter, r *http.Request) {
+
 	var input struct {
-		Type       string              `json:"type"`
-		Payload    database.Payload    `json:"payload"`
-		Priority   int                 `json:"priority"`
-		Timeout    int                 `json:"timeout"`
-		MaxRetries int                 `json:"max_retries"`
-		Validator  validator.Validator `json:"-"`
+		Type      string                     `json:"type"`
+		Payload   database.Payload           `json:"payload"`
+		Params    database.AllPossibleParams `json:"params"`
+		Validator validator.Validator        `json:"-"`
 	}
 
 	err := request.DecodeJSON(w, r, &input)
+
 	if err != nil {
 		app.badRequest(w, r, err)
 		return
 	}
 
-	// TODO: validate task input
+	// TODO: handle validation..
 
-	if input.Validator.HasErrors() {
-		app.failedValidation(w, r, input.Validator)
-		return
-	}
+	input.Payload.UpdateParams(input.Payload.Operation, input.Params)
+
+	// if input.Validator.HasErrors() {
+	// 	app.failedValidation(w, r, input.Validator)
+	// 	return
+	// }
 
 	authenticatedUser := contextGetAuthenticatedUser(r)
 
-	// create task
 	task := database.Task{
 		Type:       input.Type,
 		Payload:    input.Payload,
-		Priority:   input.Priority,
-		Timeout:    input.Timeout,
-		MaxRetries: input.MaxRetries,
+		Priority:   2,
+		Timeout:    30,
+		MaxRetries: 5,
 		UserId:     authenticatedUser.ID,
 	}
 
-	// send created task to user
-	err = app.db.InsertTask(&task)
+	// insert task and distribute task to worker node..
+	err = app.db.InsertTask(&task, func(createdTask *database.Task) error {
+		ctx, cancel := context.WithTimeout(context.Background(), 4000)
+		defer cancel()
 
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
+		err = app.taskDistributor.DistributeTaskSendTask(ctx, &worker.PayloadSendTask{
+			TaskID: createdTask.ID,
+			UserID: createdTask.UserId,
+		}, asynq.MaxRetry(createdTask.MaxRetries), asynq.Timeout(time.Duration(createdTask.Timeout)*time.Second))
 
-	ctx, cancel := context.WithTimeout(context.Background(), 4000)
-	defer cancel()
+		if err != nil {
+			return err
+		}
 
-	// TODO: add to queue for processing...
-	err = app.taskDistributor.DistributeTaskSendTask(ctx, &worker.PayloadSendTask{
-		Id: task.ID,
+		return nil
 	})
 
 	if err != nil {
