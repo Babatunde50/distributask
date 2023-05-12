@@ -8,7 +8,6 @@ import (
 type Filters struct {
 	Page     int
 	PageSize int
-	Sort     string
 }
 
 func (f Filters) limit() int {
@@ -99,7 +98,6 @@ func (db *DB) ListTasks(userId int, filters Filters) ([]*Task, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
-	// TODO: add sorting
 	query := `
 		SELECT id, type, payload, priority, status, created_at, updated_at, timeout, retry_count, max_retries, result
 		FROM tasks

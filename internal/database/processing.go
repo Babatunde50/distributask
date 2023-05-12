@@ -66,16 +66,20 @@ type AllPossibleParams struct {
 	Height int    `json:"height,omitempty"`
 }
 
-func (p *Payload) UpdateParams(op OperationType, params AllPossibleParams) {
+func (p *Payload) UpdateParams(op OperationType, params AllPossibleParams) error {
 	switch op {
 	case Resize:
-		// do something
+		if params.Width == 0 || params.Height == 0 {
+			return errors.New("provide a width and height to resize image to")
+		}
 		p.Params.ResizeParams = ResizeParams{
 			Width:  params.Width,
 			Height: params.Height,
 		}
 	case Crop:
-		// do something
+		if params.X == 0 || params.Y == 0 || params.Width == 0 || params.Height == 0 {
+			return errors.New("provide a width,height,x, and y axis to crop image into")
+		}
 		p.Params.CropParams = CropParams{
 			X:      params.X,
 			Y:      params.Y,
@@ -83,16 +87,19 @@ func (p *Payload) UpdateParams(op OperationType, params AllPossibleParams) {
 			Height: params.Height,
 		}
 	case Rotate:
-		// do something
+		if params.Angle == 0 {
+			return errors.New("provide an angle to rotate from")
+		}
 		p.Params.RotateParams = RotateParams{
 			Angle: params.Angle,
 		}
 	case Flip:
-		// do something
 		p.Params.FlipParams = FlipParams{
 			Axis: params.Axis,
 		}
 	}
+
+	return nil
 
 }
 

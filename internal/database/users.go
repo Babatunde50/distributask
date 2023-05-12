@@ -12,24 +12,22 @@ type User struct {
 	CreatedAt    time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
 	Email        string    `db:"email" json:"email"`
-	Role         string    `db:"role" json:"role"`
-	Version      int       `db:"version" json:"version"`
-	Activated    bool      `db:"activated" json:"activated"`
+	Version      int       `db:"version" json:"-"`
 	PasswordHash string    `db:"password_hash" json:"password_hash"`
 }
 
-func (db *DB) InsertUser(email, role, hashedPassword string) (int, error) {
+func (db *DB) InsertUser(email, hashedPassword string) (int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
 	var id int
 
 	query := `
-		INSERT INTO users (email, role, password_hash )
-		VALUES ($1, $2, $3)
+		INSERT INTO users (email, password_hash )
+		VALUES ($1, $2)
 		RETURNING id`
 
-	err := db.GetContext(ctx, &id, query, email, role, hashedPassword)
+	err := db.GetContext(ctx, &id, query, email, hashedPassword)
 	if err != nil {
 		return 0, err
 	}
