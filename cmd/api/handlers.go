@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Babatunde50/distributask/internal/database"
@@ -14,6 +15,8 @@ import (
 	"github.com/Babatunde50/distributask/internal/worker"
 	"github.com/go-chi/chi/v5"
 	"github.com/hibiken/asynq"
+
+	"net/url"
 
 	"github.com/pascaldekloe/jwt"
 )
@@ -70,7 +73,7 @@ func (app *application) createUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = app.db.InsertUser(input.Email, "user", hashedPassword)
+	_, err = app.db.InsertUser(input.Email, hashedPassword)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -84,7 +87,6 @@ func (app *application) createUser(w http.ResponseWriter, r *http.Request) {
 
 }
 
-// TODO: handle validation robustly
 func (app *application) listTasks(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Page     int    `json:"page"`
@@ -100,7 +102,7 @@ func (app *application) listTasks(w http.ResponseWriter, r *http.Request) {
 
 	authenticatedUser := contextGetAuthenticatedUser(r)
 
-	tasks, err := app.db.ListTasks(authenticatedUser.ID, database.Filters{Page: input.Page, PageSize: input.PageSize, Sort: input.Sort})
+	tasks, err := app.db.ListTasks(authenticatedUser.ID, database.Filters{Page: input.Page, PageSize: input.PageSize})
 
 	if err != nil {
 		app.serverError(w, r, err)
@@ -115,74 +117,9 @@ func (app *application) listTasks(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func (app *application) updateTask(w http.ResponseWriter, r *http.Request) {
-
-	taskID := chi.URLParam(r, "taskID")
-
-	taskIdInt, err := strconv.Atoi(taskID)
-
-	if err != nil {
-		app.badRequest(w, r, err)
-		return
-	}
-
-	authenticatedUser := contextGetAuthenticatedUser(r)
-
-	task, err := app.db.GetTask(taskIdInt, authenticatedUser.ID)
-
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-
-	if task == nil {
-		app.notFound(w, r)
-		return
-	}
-
-	var input struct {
-		Payload   *database.Payload   `json:"payload"`
-		Type      *string             `json:"type"`
-		Validator validator.Validator `json:"-"`
-	}
-
-	err = request.DecodeJSON(w, r, &input)
-
-	if err != nil {
-		app.badRequest(w, r, err)
-		return
-	}
-
-	if input.Payload != nil {
-		task.Payload = *input.Payload
-	}
-
-	if input.Type != nil {
-		task.Type = *input.Type
-	}
-
-	// TODO: validate task input
-
-	err = app.db.UpdateTask(task)
-
-	if err != nil {
-		app.badRequest(w, r, err)
-		return
-	}
-
-	err = app.writeJSON(w, http.StatusOK, task, nil)
-
-	if err != nil {
-		app.serverError(w, r, err)
-	}
-
-}
-
 func (app *application) deleteTask(w http.ResponseWriter, r *http.Request) {
 
-	taskID := chi.URLParam(r, "taskID")
-
-	taskIdInt, err := strconv.Atoi(taskID)
+	taskIdInt, err := strconv.Atoi(chi.URLParam(r, "taskID"))
 
 	if err != nil {
 		app.badRequest(w, r, err)
@@ -208,9 +145,7 @@ func (app *application) deleteTask(w http.ResponseWriter, r *http.Request) {
 
 func (app *application) getTask(w http.ResponseWriter, r *http.Request) {
 
-	taskId := chi.URLParam(r, "taskID")
-
-	taskIdInt, err := strconv.Atoi(taskId)
+	taskIdInt, err := strconv.Atoi(chi.URLParam(r, "taskID"))
 
 	if err != nil {
 		app.badRequest(w, r, err)
@@ -233,8 +168,21 @@ func (app *application) getTask(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// TODO: make payload more robust,
-// TODO: handle validation robustly
+func isImageURL(path string) bool {
+	parsedURL, err := url.Parse(path)
+	if err != nil {
+		return false
+	}
+	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+		return false
+	}
+	if !strings.HasSuffix(parsedURL.Path, ".jpeg") && !strings.HasSuffix(parsedURL.Path, ".jpg") &&
+		!strings.HasSuffix(parsedURL.Path, ".png") && !strings.HasSuffix(parsedURL.Path, ".gif") {
+		return false
+	}
+	return true
+}
+
 func (app *application) createTask(w http.ResponseWriter, r *http.Request) {
 
 	var input struct {
@@ -251,17 +199,27 @@ func (app *application) createTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: handle validation..
+	// validate type
+	input.Validator.CheckField(input.Type == "image_processing", "Type", "only image_processing type is allowed")
 
-	input.Payload.UpdateParams(input.Payload.Operation, input.Params)
+	// validate payload
+	input.Validator.CheckField(isImageURL(input.Payload.URL), "Payload", "Provide a valid image url")
+	input.Validator.CheckField(input.Payload.Operation == database.Resize || input.Payload.Operation == database.Crop || input.Payload.Operation == database.Rotate || input.Payload.Operation == database.Flip, "Payload", "Provide a valid operation to perform on the image")
 
-	// if input.Validator.HasErrors() {
-	// 	app.failedValidation(w, r, input.Validator)
-	// 	return
-	// }
+	if input.Validator.HasErrors() {
+		app.failedValidation(w, r, input.Validator)
+		return
+	}
+
+	err = input.Payload.UpdateParams(input.Payload.Operation, input.Params)
+
+	if err != nil {
+		app.badRequest(w, r, err)
+	}
 
 	authenticatedUser := contextGetAuthenticatedUser(r)
 
+	// TODO: remove hardcoded values
 	task := database.Task{
 		Type:       input.Type,
 		Payload:    input.Payload,
@@ -293,7 +251,10 @@ func (app *application) createTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = app.writeJSON(w, http.StatusCreated, task, nil)
+	err = app.writeJSON(w, http.StatusCreated, struct {
+		Message string
+		Url     string
+	}{Message: "Task is now being processed", Url: app.config.baseURL + "/tasks/" + strconv.Itoa(task.ID)}, nil)
 
 	if err != nil {
 		app.serverError(w, r, err)
